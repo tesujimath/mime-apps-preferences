@@ -1,0 +1,130 @@
+#!/usr/bin/env python
+
+import os
+
+import Tkinter
+
+class App:
+    def __init__(self, desktop_dir, desktop_file):
+        self._id = desktop_file
+        self.attr = {}
+        with open(os.path.join(desktop_dir, desktop_file)) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("["):
+                    #print("%s: skip header: %s" % (desktop_file, line))
+                    pass
+                elif line.startswith("#"):
+                    #print("%s: skip comment: %s" % (desktop_file, line))
+                    pass
+                elif line == "":
+                    #print("%s: skip empty: %s." % (desktop_file, line))
+                    pass
+                else:
+                    tokens = line.split("=", 1)
+                    if len(tokens) == 2:
+                        if tokens[0] in ["Type", "Name", "Categories", "MimeType"]:
+                            self.attr[tokens[0]] = tokens[1]
+                    else:
+                        print("%s: weird line: %s" % (desktop_file, line))
+        if self.attr.has_key("Type"):
+            self._type = self.attr["Type"]
+        else:
+            self._type = "<unknown>"
+        self._mime_types = {}
+        if self.attr.has_key("MimeType"):
+            for mime_type in self.attr["MimeType"].rstrip(";").split(";"):
+                self._mime_types[mime_type] = 1
+
+    def remove_mime_types(self, mime_types):
+        for mime_type in mime_types:
+            if self._mime_types.has_key(mime_type):
+                del self._mime_types[mime_type]
+
+    def type(self):
+        return self._type
+
+    def id(self):
+        return self._id
+
+    def name(self):
+        return self.attr["Name"]
+
+    def mime_types(self):
+        return self._mime_types.keys()
+
+    def n_mime_types(self):
+        return len(self._mime_types)
+
+    def print_summary(self):
+        print("%s: %d mime types" % (self.id(), self.n_mime_types()))
+
+class Registry:
+    def __init__(self):
+        self.mime_types = {}
+        self.apps = {}
+
+    def register(self, app):
+        if self.apps.has_key(app.id()):
+            print("warning: duplicate app %s" % app.id())
+        else:
+            self.apps[app.id()] = app
+            for mime_type in app.mime_types():
+                if not self.mime_types.has_key(mime_type):
+                    self.mime_types[mime_type] = []
+                self.mime_types[mime_type].append(app)
+
+    def print_summary(self):
+        print("Registry: %d applications, %d mime types" % (len(self.apps), len(self.mime_types)))
+        for id in sorted(self.apps.keys()):
+            self.apps[id].print_summary()
+
+    def discard_unique_mime_types(self):
+        """Discard any mime types for which there is only one application."""
+        unique_mime_types = []
+        for mime_type in self.mime_types.keys():
+            if len(self.mime_types[mime_type]) == 1:
+                unique_mime_types.append(mime_type)
+                del self.mime_types[mime_type]
+        # now remove these mime types from all apps
+        for id in self.apps.keys():
+            app = self.apps[id]
+            app.remove_mime_types(unique_mime_types)
+            # if any app doesn't have any interesting mime types, remove it
+            if app.n_mime_types() <= 1:
+                del self.apps[id]
+
+class MyApp:
+    def __init__(self, master):
+        self.frame = Tkinter.Frame(master)
+        nextrow = 0
+        self.registry = Registry()
+        self.read_desktop_files()
+
+    def read_desktop_files(self):
+        datadirs = os.getenv("XDG_DATA_DIRS")
+        if not datadirs:
+            datadirs = "/usr/local/share/:/usr/share/"
+        applications_dirs = {}
+        for datadir in datadirs.split(":"):
+            applications_dir = os.path.join(datadir, "applications")
+            if os.path.exists(applications_dir):
+                applications_dirs[applications_dir] = 1
+        print("looking in %s" % " ".join(applications_dirs.keys()))
+        for applications_dir in applications_dirs.keys():
+            for filename in os.listdir(applications_dir):
+                if filename.endswith(".desktop"):
+                    app = App(applications_dir, filename)
+                    if app.type() == "Application" and app.n_mime_types() > 0:
+                        self.registry.register(app)
+        self.registry.print_summary()
+        self.registry.discard_unique_mime_types()
+        self.registry.print_summary()
+
+def main():
+    root = Tkinter.Tk()
+    app = MyApp(root)
+    root.mainloop()
+
+if __name__ == '__main__':
+    main()
