@@ -115,11 +115,15 @@ class Registry:
             if app.n_mime_types() == 0:
                 #print("discarding %s" % id)
                 del self._apps[id]
-        # finally cache sorted apps list
+        # finally cache sorted apps and mime_types lists
         self._all_sorted_apps = sorted(self._apps.values(), key=lambda(app): app.name())
+        self._all_sorted_mime_types = sorted(self._mime_types.keys())
 
     def all_apps(self):
         return self._all_sorted_apps
+
+    def all_mime_types(self):
+        return self._all_sorted_mime_types
 
     def app_by_id(self, app_id):
         if self._apps.has_key(app_id):
@@ -136,10 +140,15 @@ class Registry:
                 apps[app.id()] = app
         return apps
 
+    def apps_for_mime_type(self, mime_type):
+        """Return list of apps which support given mime type."""
+        return self._mime_types[mime_type]
+
 class ScrollingListbox(Tkinter.Frame):
     def __init__(self, master, height, width, showfn = None, selectfn = None):
         Tkinter.Frame.__init__(self, master)
         self.items = []
+        self._selected_index = None
         self.showfn = showfn
         self.selectfn = selectfn
         self.scrollbar = Tkinter.Scrollbar(self, orient=Tkinter.VERTICAL)
@@ -150,9 +159,17 @@ class ScrollingListbox(Tkinter.Frame):
         self.scrollbar.grid(row=0, column=1, sticky=Tkinter.N + Tkinter.S)
 
     def _select(self, e):
+        """Select, or unselect."""
         index = int(e.widget.curselection()[0])
+        if index == self._selected_index:
+            self._selected_index = None
+            self._selected_item = None
+            self.listbox.selection_clear(index)
+        else:
+            self._selected_index = index
+            self._selected_item = self.items[self._selected_index]
         if self.selectfn is not None:
-            self.selectfn(index)
+            self.selectfn(self._selected_item, self._selected_index)
 
     def _item_as_string(self, item):
         """Return item as string for display."""
@@ -163,11 +180,7 @@ class ScrollingListbox(Tkinter.Frame):
 
     def selected_index(self):
         """return selection if any, else None."""
-        s = self.listbox.curselection()
-        if len(s) > 0:
-            return int(s[0])
-        else:
-            return None
+        return self._selected_index
 
     def select_by_index(self, i):
         """Select the given index."""
@@ -175,6 +188,7 @@ class ScrollingListbox(Tkinter.Frame):
 
     def populate(self, items):
         self.listbox.delete(0, Tkinter.END)
+        self._selected_index = None
         self.items = items
         for item in self.items:
             self.listbox.insert(Tkinter.END, self._item_as_string(item))
@@ -235,6 +249,7 @@ class MyApp:
         self.registry = Registry()
         self.read_desktop_files()
         self.populate_apps_listbox()
+        self.populate_mime_types_listbox()
 
         self.frame.pack()
 
@@ -299,7 +314,18 @@ class MyApp:
         self.registry.discard_unique_mime_types()
 
     def populate_apps_listbox(self):
-        self.apps_scrolling_listbox.populate(self.registry.all_apps())
+        if self.selected_mime_type:
+            app_list = self.registry.apps_for_mime_type(self.selected_mime_type)
+        else:
+            app_list = self.registry.all_apps()
+        self.apps_scrolling_listbox.populate(app_list)
+
+    def populate_mime_types_listbox(self):
+        if self.selected_app:
+            mime_type_list = sorted(self.selected_app.mime_types())
+        else:
+            mime_type_list = self.registry.all_mime_types()
+        self.mime_types_scrolling_listbox.populate(mime_type_list)
 
     def populate_preferred_dontcare_listboxes(self):
         self.preferred_apps = []
@@ -311,20 +337,26 @@ class MyApp:
         self.preferred_apps_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.preferred_apps])
         self.dontcare_apps_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.dontcare_apps])
 
-    def select_from_apps(self, i):
-        self.selected_app = self.registry.all_apps()[i]
-        print("select_from_apps %d: %s" % (i, self.selected_app.qualified_name()))
-        self.related_apps = self.registry.related_apps(self.selected_app)
+    def select_from_apps(self, app, i):
+        self.selected_app = app
+        if app is not None:
+            print("select_from_apps %d: %s" % (i, self.selected_app.qualified_name()))
+            self.related_apps = self.registry.related_apps(self.selected_app)
+        else:
+            print("unselect_from_apps")
+            self.related_apps = {}
         self.populate_preferred_dontcare_listboxes()
+        self.populate_mime_types_listbox()
 
-    def select_from_mime_types(self, i):
-        print("not yet implemented")
+    def select_from_mime_types(self, mime_type, i):
+        self.selected_mime_type = mime_type
+        self.populate_apps_listbox()
 
-    def select_from_preferred_apps(self, i):
-        print("select_from_preferred_apps %d" % i)
+    def select_from_preferred_apps(self, app_id, i):
+        print("select_from_preferred_apps %d: %s" % (i, app_id))
 
-    def select_from_dontcare_apps(self, i):
-        print("select_from_dontcare_apps %d" % i)
+    def select_from_dontcare_apps(self, app_id, i):
+        print("select_from_dontcare_apps %d: %s" % (i, app_id))
 
 def main():
     root = Tkinter.Tk()
