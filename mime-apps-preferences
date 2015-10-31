@@ -218,28 +218,45 @@ class MyApp:
 
         self.apps_label = Tkinter.Label(self.frame, text = "Applications")
         self.apps_label.grid(row = nextrow, column = 0)
-        self.mime_types_label = Tkinter.Label(self.frame, text = "Mime Types")
-        self.mime_types_label.grid(row = nextrow, column = 1)
+        self.supported_mime_types_label = Tkinter.Label(self.frame, text = "Mime Types")
+        self.supported_mime_types_label.grid(row = nextrow, column = 1)
+        self.blacklisted_mime_types_label = Tkinter.Label(self.frame, text = "Blacklisted Mime Types")
+        self.blacklisted_mime_types_label.grid(row = nextrow, column = 3)
         nextrow += 1
 
         listbox_width = 40
         listbox_height = 20
         self.apps_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, showfn = lambda x: x.qualified_name(), selectfn=self.select_from_apps)
         self.apps_scrolling_listbox.grid(row=nextrow, column=0)
-        self.mime_types_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_mime_types)
-        self.mime_types_scrolling_listbox.grid(row=nextrow, column=1)
+        self.supported_mime_types_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_supported_mime_types)
+        self.supported_mime_types_scrolling_listbox.grid(row=nextrow, column=1)
+        self.blacklisted_mime_types_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_blacklisted_mime_types)
+        self.blacklisted_mime_types_scrolling_listbox.grid(row=nextrow, column=3)
         nextrow += 1
 
-        self.preferred_apps_label = Tkinter.Label(self.frame, text = "Preferred Applications")
-        self.preferred_apps_label.grid(row = nextrow, column = 0)
+        self.global_preference_label = Tkinter.Label(self.frame, text = "Global Preferences")
+        self.global_preference_label.grid(row = nextrow, column = 0)
+        self.preferred_apps_label = Tkinter.Label(self.frame, text = "Preferred Applications for Mime Type(s)")
+        self.preferred_apps_label.grid(row = nextrow, column = 1)
         self.dontcare_apps_label = Tkinter.Label(self.frame, text = "Dontcare Applications")
-        self.dontcare_apps_label.grid(row = nextrow, column = 1)
+        self.dontcare_apps_label.grid(row = nextrow, column = 3)
         nextrow += 1
+
+        self.global_preference_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_global_preference)
+        self.global_preference_scrolling_listbox.grid(row=nextrow, column=0)
 
         self.preferred_apps_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_preferred_apps)
-        self.preferred_apps_scrolling_listbox.grid(row=nextrow, column=0)
+        self.preferred_apps_scrolling_listbox.grid(row=nextrow, column=1)
+
+        self.dontcare_buttonbox = Tkinter.Frame(self.frame)
+        self.prefer_dontcare_button = Tkinter.Button(self.dontcare_buttonbox, text="<<", command=self.prefer_dontcare)
+        self.prefer_dontcare_button.grid(row=0, column=0)
+        self.forget_preferred_button = Tkinter.Button(self.dontcare_buttonbox, text=">>", command=self.forget_preferred)
+        self.forget_preferred_button.grid(row=1, column=0)
+        self.dontcare_buttonbox.grid(row=nextrow, column=2)
+
         self.dontcare_apps_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_dontcare_apps)
-        self.dontcare_apps_scrolling_listbox.grid(row=nextrow, column=1)
+        self.dontcare_apps_scrolling_listbox.grid(row=nextrow, column=3)
         nextrow += 1
 
         self.preferred_buttonbox = Tkinter.Frame(self.frame)
@@ -247,19 +264,12 @@ class MyApp:
         self.promote_preferred_button.grid(row=0, column=0)
         self.demote_preferred_button = Tkinter.Button(self.preferred_buttonbox, text="-", command=self.demote_preferred)
         self.demote_preferred_button.grid(row=0, column=1)
-        self.forget_preferred_button = Tkinter.Button(self.preferred_buttonbox, text=">>", command=self.forget_preferred)
-        self.forget_preferred_button.grid(row=0, column=2)
         self.preferred_buttonbox.grid(row=nextrow, column=1)
-
-        self.dontcare_buttonbox = Tkinter.Frame(self.frame)
-        self.prefer_dontcare_button = Tkinter.Button(self.dontcare_buttonbox, text="<<", command=self.prefer_dontcare)
-        self.prefer_dontcare_button.grid(row=0, column=0)
-        self.dontcare_buttonbox.grid(row=nextrow, column=2)
 
         self.registry = Registry()
         self.read_desktop_files()
         self.populate_apps_listbox()
-        self.populate_mime_types_listbox()
+        self.populate_supported_mime_types_listbox()
 
         self.frame.pack()
 
@@ -274,6 +284,7 @@ class MyApp:
             self.global_preference.insert(new_position, this_app_id)
             self.populate_preferred_dontcare_listboxes()
             self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app_id))
+            self.populate_global_preference_listbox()
 
     def demote_preferred(self):
         i = self.preferred_apps_scrolling_listbox.selected_index()
@@ -286,6 +297,7 @@ class MyApp:
             self.global_preference.insert(new_position, this_app_id)
             self.populate_preferred_dontcare_listboxes()
             self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app_id))
+            self.populate_global_preference_listbox()
 
     def forget_preferred(self):
         i = self.preferred_apps_scrolling_listbox.selected_index()
@@ -295,6 +307,7 @@ class MyApp:
             self.global_preference.remove(this_app_id)
             self.populate_preferred_dontcare_listboxes()
             self.dontcare_apps_scrolling_listbox.select_by_index(self.dontcare_apps.index(this_app_id))
+            self.populate_global_preference_listbox()
 
     def prefer_dontcare(self):
         i = self.dontcare_apps_scrolling_listbox.selected_index()
@@ -304,6 +317,7 @@ class MyApp:
             self.global_preference.append(this_app_id)
             self.populate_preferred_dontcare_listboxes()
             self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app_id))
+            self.populate_global_preference_listbox()
 
     def read_desktop_files(self):
         datadirs = os.getenv("XDG_DATA_DIRS")
@@ -330,12 +344,12 @@ class MyApp:
             app_list = self.registry.all_apps()
         self.apps_scrolling_listbox.populate(app_list)
 
-    def populate_mime_types_listbox(self):
+    def populate_supported_mime_types_listbox(self):
         if self.selected_app is not None:
             mime_type_list = sorted(self.selected_app.mime_types())
         else:
             mime_type_list = self.registry.all_mime_types()
-        self.mime_types_scrolling_listbox.populate(mime_type_list)
+        self.supported_mime_types_scrolling_listbox.populate(mime_type_list)
 
     def populate_preferred_dontcare_listboxes(self):
         self.preferred_apps = []
@@ -347,6 +361,9 @@ class MyApp:
         self.preferred_apps_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.preferred_apps])
         self.dontcare_apps_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.dontcare_apps])
 
+    def populate_global_preference_listbox(self):
+        self.global_preference_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.global_preference])
+
     def select_from_apps(self, app, i):
         self.selected_app = app
         if app is not None:
@@ -356,11 +373,17 @@ class MyApp:
             print("unselect_from_apps")
             self.related_apps = {}
         self.populate_preferred_dontcare_listboxes()
-        self.populate_mime_types_listbox()
+        self.populate_supported_mime_types_listbox()
 
-    def select_from_mime_types(self, mime_type, i):
+    def select_from_supported_mime_types(self, mime_type, i):
         self.selected_mime_type = mime_type
         self.populate_apps_listbox()
+
+    def select_from_blacklisted_mime_types(self, mime_type, i):
+        print("not yet implemented")
+
+    def select_from_global_preference(self, app_id, i):
+        print("select_from_global_preference %d: %s" % (i, app_id))
 
     def select_from_preferred_apps(self, app_id, i):
         print("select_from_preferred_apps %d: %s" % (i, app_id))
