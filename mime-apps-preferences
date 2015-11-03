@@ -12,21 +12,21 @@ def strip_end(text, suffix):
 
 class App:
     """An application, with info from its desktop entry."""
-    def __init__(self, desktop_dir, desktop_file):
-        self._id = desktop_file
+    def __init__(self, desktop_dir, desktop_file_name):
+        self._id = strip_end(desktop_file_name, ".desktop")
         attr = {}
         section = "<nosection>"
-        with open(os.path.join(desktop_dir, desktop_file)) as f:
+        with open(os.path.join(desktop_dir, desktop_file_name)) as f:
             for line in f:
                 line = line.strip()
                 if line.startswith("["):
-                    #print("%s: skip header: %s" % (desktop_file, line))
+                    #print("%s: skip header: %s" % (desktop_file_name, line))
                     section = line.lstrip("[").rstrip("]")
                 elif line.startswith("#"):
-                    #print("%s: skip comment: %s" % (desktop_file, line))
+                    #print("%s: skip comment: %s" % (desktop_file_name, line))
                     pass
                 elif line == "":
-                    #print("%s: skip empty: %s." % (desktop_file, line))
+                    #print("%s: skip empty: %s." % (desktop_file_name, line))
                     pass
                 else:
                     tokens = line.split("=", 1)
@@ -34,7 +34,7 @@ class App:
                         if tokens[0] in ["Type", "Name", "MimeType"] and section == "Desktop Entry":
                             attr[tokens[0]] = tokens[1]
                     else:
-                        print("%s: weird line: %s" % (desktop_file, line))
+                        print("%s: weird line: %s" % (desktop_file_name, line))
         if attr.has_key("Type"):
             self._type = attr["Type"]
         else:
@@ -48,6 +48,10 @@ class App:
             for mime_type in attr["MimeType"].rstrip(";").split(";"):
                 self._mime_types[mime_type] = 1
         #print("%s: %s" % (self.id(), self.mime_types()))
+
+    def __str__(self):
+        """Need the name *and* the id, for those apps with stupid names (hello gpicview)."""
+        return "%s (%s)" % (self._name, self._id)
 
     def remove_mime_types(self, mime_types):
         for mime_type in mime_types:
@@ -63,15 +67,8 @@ class App:
     def name(self):
         return self._name
 
-    def qualified_name(self):
-        """Append the id, for those apps with stupid names (hello gpicview)."""
-        return "%s (%s)" % (self.name(), strip_end(self.id(), ".desktop"))
-
     def mime_types(self):
         return self._mime_types.keys()
-
-    def supports_mime_type(self, mime_type):
-        return self._mime_types.has_key(mime_type)
 
     def n_mime_types(self):
         return len(self._mime_types)
@@ -79,35 +76,70 @@ class App:
     def print_summary(self):
         print("%s: %d mime types" % (self.id(), self.n_mime_types()))
 
-class Registry:
+class AppMimetype:
+    """A pair (app, mime-type)."""
+
+    def __init__(self, app, mime_type):
+        self._app = app
+        self._mime_type = mime_type
+
+    def __str__(self):
+        return "%s: %s" % (str(self._app), self._mime_type)
+
+    def app(self):
+        return self._app
+
+    def mime_type(self):
+        return self._mime_type
+
+class Catalogue:
     def __init__(self):
-        self._mime_types = {}   # list of app, by mime_type
+        self._app_by_mime_type = {}   # list of app, by mime_type
         self._apps = {}         # app, by app_id
         self._blacklisted_mime_types = {} # (dict of mime_type) by app_id
         self._blacklisted_mime_types_list = None # cache
+        self._read_desktop_files()
 
-    def register(self, app):
+    def _read_desktop_files(self):
+        datadirs = os.getenv("XDG_DATA_DIRS")
+        if not datadirs:
+            datadirs = "/usr/local/share/:/usr/share/"
+        applications_dirs = {}
+        for datadir in datadirs.split(":"):
+            applications_dir = os.path.join(datadir, "applications")
+            if os.path.exists(applications_dir):
+                applications_dirs[applications_dir] = 1
+        #print("looking in %s" % " ".join(applications_dirs.keys()))
+        for applications_dir in applications_dirs.keys():
+            for filename in os.listdir(applications_dir):
+                if filename.endswith(".desktop"):
+                    app = App(applications_dir, filename)
+                    if app.type() == "Application" and app.n_mime_types() > 0:
+                        self._register(app)
+        self._discard_unique_mime_types()
+
+    def _register(self, app):
         if self._apps.has_key(app.id()):
             print("warning: duplicate app %s" % app.id())
         else:
             self._apps[app.id()] = app
             for mime_type in app.mime_types():
-                if not self._mime_types.has_key(mime_type):
-                    self._mime_types[mime_type] = []
-                self._mime_types[mime_type].append(app)
+                if not self._app_by_mime_type.has_key(mime_type):
+                    self._app_by_mime_type[mime_type] = []
+                self._app_by_mime_type[mime_type].append(app)
 
     def print_summary(self):
-        print("Registry: %d applications, %d mime types" % (len(self._apps), len(self._mime_types)))
+        print("Catalogue: %d applications, %d mime types" % (len(self._apps), len(self._app_by_mime_type)))
         for id in sorted(self._apps.keys()):
             self._apps[id].print_summary()
 
-    def discard_unique_mime_types(self):
+    def _discard_unique_mime_types(self):
         """Discard any mime types for which there is only one application."""
         unique_mime_types = []
-        for mime_type in self._mime_types.keys():
-            if len(self._mime_types[mime_type]) == 1:
+        for mime_type in self._app_by_mime_type.keys():
+            if len(self._app_by_mime_type[mime_type]) == 1:
                 unique_mime_types.append(mime_type)
-                del self._mime_types[mime_type]
+                del self._app_by_mime_type[mime_type]
         #print("discarding %s" % ' '.join(unique_mime_types))
         # now remove these mime types from all apps
         for id in self._apps.keys():
@@ -118,8 +150,8 @@ class Registry:
                 #print("discarding %s" % id)
                 del self._apps[id]
         # finally cache sorted apps and mime_types lists
-        self._all_sorted_apps = sorted(self._apps.values(), key=lambda(app): app.qualified_name())
-        self._all_sorted_mime_types = sorted(self._mime_types.keys())
+        self._all_sorted_apps = sorted(self._apps.values(), key=lambda(app): str(app))
+        self._all_sorted_mime_types = sorted(self._app_by_mime_type.keys())
 
     def all_apps(self):
         return self._all_sorted_apps
@@ -127,55 +159,50 @@ class Registry:
     def all_mime_types(self):
         return self._all_sorted_mime_types
 
-    def app_by_id(self, app_id):
-        if self._apps.has_key(app_id):
-            app = self._apps[app_id]
-            return app
-        else:
-            print("oops, can't find %s" % app_id)
-
     def related_apps(self, app):
         """Return apps related to given one, i.e. with overlapping mime types."""
-        apps = {}               # app by app_id
+        apps = {}
         for mime_type in app.mime_types():
-            for app in self._mime_types[mime_type]:
-                apps[app.id()] = app
-        return apps
+            for app in self._app_by_mime_type[mime_type]:
+                apps[app] = 1
+        return apps.keys()
 
     def apps_for_mime_type(self, mime_type):
         """Return list of apps which support given mime type."""
-        return self._mime_types[mime_type]
+        return self._app_by_mime_type[mime_type]
 
-    def blacklist_mime_type(self, app_id, mime_type):
-        print("blacklist %s: %s" % (app_id, mime_type))
+    def blacklist_mime_type(self, app, mime_type):
+        print("blacklist %s: %s" % (app, mime_type))
         self._blacklisted_mime_types_list = None
-        if not self._blacklisted_mime_types.has_key(app_id):
-            self._blacklisted_mime_types[app_id] = {}
-        self._blacklisted_mime_types[app_id][mime_type] = 1
+        if not self._blacklisted_mime_types.has_key(app):
+            self._blacklisted_mime_types[app] = {}
+        self._blacklisted_mime_types[app][mime_type] = 1
 
-    def unblacklist_mime_type(self, app_id, mime_type):
-        print("unblacklist %s: %s" % (app_id, mime_type))
+    def unblacklist_mime_type(self, app_mime_type):
+        print("unblacklist %s" % (app_mime_type))
+        app = app_mime_type.app()
+        mime_type = app_mime_type.mime_type()
         self._blacklisted_mime_types_list = None
-        if self._blacklisted_mime_types.has_key(app_id) and self._blacklisted_mime_types[app_id].has_key(mime_type):
-            del self._blacklisted_mime_types[app_id][mime_type]
-            if len(self._blacklisted_mime_types[app_id]) == 0:
-                del self._blacklisted_mime_types[app_id]
+        if self._blacklisted_mime_types.has_key(app) and self._blacklisted_mime_types[app].has_key(mime_type):
+            del self._blacklisted_mime_types[app][mime_type]
+            if len(self._blacklisted_mime_types[app]) == 0:
+                del self._blacklisted_mime_types[app]
 
     def blacklisted_mime_types(self):
         if self._blacklisted_mime_types_list is not None:
             return self._blacklisted_mime_types_list
-        self._blacklisted_mime_types_list = []
-        for app_id in sorted(self._blacklisted_mime_types.keys(), key=lambda(id): self._apps[id].qualified_name()):
-            for mime_type in sorted(self._blacklisted_mime_types[app_id].keys()):
-                self._blacklisted_mime_types_list.append((app_id, mime_type))
+        blacklist = []
+        for app in self._blacklisted_mime_types.keys():
+            for mime_type in self._blacklisted_mime_types[app].keys():
+                blacklist.append(AppMimetype(app, mime_type))
+        self._blacklisted_mime_types_list = sorted(blacklist, key=lambda x: str(x))
         return self._blacklisted_mime_types_list
 
 class ScrollingListbox(Tkinter.Frame):
-    def __init__(self, master, height, width, showfn = None, selectfn = None):
+    def __init__(self, master, height, width, selectfn = None):
         Tkinter.Frame.__init__(self, master)
         self.items = []
         self._selected_index = None
-        self.showfn = showfn
         self.selectfn = selectfn
         self.scrollbar = Tkinter.Scrollbar(self, orient=Tkinter.VERTICAL)
         self.listbox = Tkinter.Listbox(self, selectmode=Tkinter.BROWSE, height=height, width=width, yscrollcommand=self.scrollbar.set, exportselection=0)
@@ -202,13 +229,6 @@ class ScrollingListbox(Tkinter.Frame):
             self.listbox.selection_clear(i)
         self._selected_index = None
 
-    def _item_as_string(self, item):
-        """Return item as string for display."""
-        if not self.showfn:
-            return item
-        else:
-            return self.showfn(item)
-
     def selected_index(self):
         """return selection index if any, else None."""
         return self._selected_index
@@ -227,7 +247,7 @@ class ScrollingListbox(Tkinter.Frame):
         self.listbox.selection_set(i)
 
     def populate(self, items):
-        #print("populate(%s), index is %s of %s" % (','.join([self._item_as_string(x) for x in items]), str(self._selected_index), ','.join([self._item_as_string(x) for x in self.items])))
+        #print("populate(%s), index is %s of %s" % (','.join([str(x) for x in items]), str(self._selected_index), ','.join([str(x) for x in self.items])))
         self.listbox.delete(0, Tkinter.END)
         if self._selected_index is not None:
             # preserve the selection if it occurs in the new list
@@ -239,7 +259,7 @@ class ScrollingListbox(Tkinter.Frame):
                 self._selected_index = None
         self.items = items
         for item in self.items:
-            self.listbox.insert(Tkinter.END, self._item_as_string(item))
+            self.listbox.insert(Tkinter.END, str(item))
         if self._selected_index is not None:
             self.select_by_index(self._selected_index)
 
@@ -270,12 +290,12 @@ class MyApp:
         self.selected_app = None
         self.selected_mime_type = None
 
-        self.registry = Registry()
+        self.catalogue = Catalogue()
 
-        self.global_preference = [] # list of app_id, in preference order
-        self.related_apps = {}       # app by app_id
-        self.preferred_apps = []     # list of app_id
-        self.dontcare_apps = []      # list of app_id
+        self.global_preference = [] # list of app, in preference order
+        self.related_apps = []       # list of app
+        self.preferred_apps = []     # list of app
+        self.dontcare_apps = []      # list of app
 
         nextrow = 0
 
@@ -289,12 +309,11 @@ class MyApp:
 
         listbox_width = 40
         listbox_height = 20
-        self.apps_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, showfn=lambda x: x.qualified_name(), selectfn=self.select_from_apps)
+        self.apps_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_apps)
         self.apps_scrolling_listbox.grid(row=nextrow, column=0)
         self.supported_mime_types_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width, selectfn=self.select_from_supported_mime_types)
         self.supported_mime_types_scrolling_listbox.grid(row=nextrow, column=1)
         self.blacklisted_mime_types_scrolling_listbox = ScrollingListbox(self.frame, height=listbox_height, width=listbox_width,
-                                                                         showfn=lambda x: "%s: %s" % (self.registry.app_by_id(x[0]).qualified_name(), x[1]),
                                                                          selectfn=self.select_from_blacklisted_mime_types)
         self.blacklisted_mime_types_scrolling_listbox.grid(row=nextrow, column=3)
 
@@ -330,7 +349,6 @@ class MyApp:
         self.demote_preferred_button.grid(row=0, column=1)
         self.preferred_buttonbox.grid(row=nextrow, column=1)
 
-        self.read_desktop_files()
         self.populate_apps_listbox()
         self.populate_supported_mime_types_listbox()
 
@@ -339,18 +357,18 @@ class MyApp:
     def shuttle_app(self, d, i):
         print("shuttle_app(%d, %d)" % (d, i))
         if d == 0:
-            this_app_id = self.preferred_apps[i]
+            this_app = self.preferred_apps[i]
             print("forget %d" % i)
-            self.global_preference.remove(this_app_id)
+            self.global_preference.remove(this_app)
             self.populate_preferred_dontcare_listboxes()
-            self.dontcare_apps_scrolling_listbox.select_by_index(self.dontcare_apps.index(this_app_id))
+            self.dontcare_apps_scrolling_listbox.select_by_index(self.dontcare_apps.index(this_app))
             self.populate_global_preference_listbox()
         else:
-            this_app_id = self.dontcare_apps[i]
+            this_app = self.dontcare_apps[i]
             print("prefer %d" % i)
-            self.global_preference.append(this_app_id)
+            self.global_preference.append(this_app)
             self.populate_preferred_dontcare_listboxes()
-            self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app_id))
+            self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app))
             self.populate_global_preference_listbox()
 
     def shuttle_mime_type(self, d, i):
@@ -359,98 +377,79 @@ class MyApp:
             app = self.apps_scrolling_listbox.selected_item()
             mime_type = self.supported_mime_types_scrolling_listbox.selected_item()
             if app is not None and mime_type is not None:
-                self.registry.blacklist_mime_type(app.id(), mime_type)
+                self.catalogue.blacklist_mime_type(app, mime_type)
                 self.populate_supported_mime_types_listbox()
                 self.populate_blacklisted_mime_types_listbox()
         else:
-            (app_id, mime_type) = self.registry.blacklisted_mime_types()[i]
-            self.registry.unblacklist_mime_type(app_id, mime_type)
+            app_mime_type = self.catalogue.blacklisted_mime_types()[i]
+            self.catalogue.unblacklist_mime_type(app_mime_type)
             self.populate_supported_mime_types_listbox()
             self.populate_blacklisted_mime_types_listbox()
 
     def promote_preferred(self):
         i = self.preferred_apps_scrolling_listbox.selected_index()
         if i is not None and i > 0:
-            this_app_id = self.preferred_apps[i]
-            prev_app_id = self.preferred_apps[i - 1]
-            print("promote %d %s" % (i, this_app_id))
-            self.global_preference.remove(this_app_id)
-            new_position = self.global_preference.index(prev_app_id)
-            self.global_preference.insert(new_position, this_app_id)
+            this_app = self.preferred_apps[i]
+            prev_app = self.preferred_apps[i - 1]
+            print("promote %d %s" % (i, this_app))
+            self.global_preference.remove(this_app)
+            new_position = self.global_preference.index(prev_app)
+            self.global_preference.insert(new_position, this_app)
             self.populate_preferred_dontcare_listboxes()
-            self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app_id))
+            self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app))
             self.populate_global_preference_listbox()
 
     def demote_preferred(self):
         i = self.preferred_apps_scrolling_listbox.selected_index()
         if i is not None and i < len(self.preferred_apps) - 1:
-            this_app_id = self.preferred_apps[i]
-            next_app_id = self.preferred_apps[i + 1]
-            print("demote %d %s" % (i, this_app_id))
-            self.global_preference.remove(this_app_id)
-            new_position = self.global_preference.index(next_app_id) + 1
-            self.global_preference.insert(new_position, this_app_id)
+            this_app = self.preferred_apps[i]
+            next_app = self.preferred_apps[i + 1]
+            print("demote %d %s" % (i, this_app))
+            self.global_preference.remove(this_app)
+            new_position = self.global_preference.index(next_app) + 1
+            self.global_preference.insert(new_position, this_app)
             self.populate_preferred_dontcare_listboxes()
-            self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app_id))
+            self.preferred_apps_scrolling_listbox.select_by_index(self.preferred_apps.index(this_app))
             self.populate_global_preference_listbox()
-
-    def read_desktop_files(self):
-        datadirs = os.getenv("XDG_DATA_DIRS")
-        if not datadirs:
-            datadirs = "/usr/local/share/:/usr/share/"
-        applications_dirs = {}
-        for datadir in datadirs.split(":"):
-            applications_dir = os.path.join(datadir, "applications")
-            if os.path.exists(applications_dir):
-                applications_dirs[applications_dir] = 1
-        #print("looking in %s" % " ".join(applications_dirs.keys()))
-        for applications_dir in applications_dirs.keys():
-            for filename in os.listdir(applications_dir):
-                if filename.endswith(".desktop"):
-                    app = App(applications_dir, filename)
-                    if app.type() == "Application" and app.n_mime_types() > 0:
-                        self.registry.register(app)
-        self.registry.discard_unique_mime_types()
 
     def populate_apps_listbox(self):
         if self.selected_mime_type:
-            app_list = self.registry.apps_for_mime_type(self.selected_mime_type)
+            app_list = self.catalogue.apps_for_mime_type(self.selected_mime_type)
         else:
-            app_list = self.registry.all_apps()
+            app_list = self.catalogue.all_apps()
         self.apps_scrolling_listbox.populate(app_list)
 
     def populate_supported_mime_types_listbox(self):
         if self.selected_app is not None:
             mime_type_list = sorted(self.selected_app.mime_types())
         else:
-            mime_type_list = self.registry.all_mime_types()
+            mime_type_list = self.catalogue.all_mime_types()
         self.supported_mime_types_scrolling_listbox.populate(mime_type_list)
 
     def populate_blacklisted_mime_types_listbox(self):
-        print("populating blacklist with %s" % self.registry.blacklisted_mime_types())
-        self.blacklisted_mime_types_scrolling_listbox.populate(self.registry.blacklisted_mime_types())
+        print("populating blacklist with %s" % self.catalogue.blacklisted_mime_types())
+        self.blacklisted_mime_types_scrolling_listbox.populate(self.catalogue.blacklisted_mime_types())
 
     def populate_preferred_dontcare_listboxes(self):
         self.preferred_apps = []
-        for app_id in self.global_preference:
-            if app_id in self.related_apps.keys():
-                self.preferred_apps.append(app_id)
-        dontcare_apps = sorted([self.registry.app_by_id(app_id) for app_id in self.related_apps.keys() if app_id not in self.preferred_apps], key=lambda(app): app.qualified_name())
-        self.dontcare_apps = [app.id() for app in dontcare_apps]
-        self.preferred_apps_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.preferred_apps])
-        self.dontcare_apps_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.dontcare_apps])
+        for app in self.global_preference:
+            if app in self.related_apps:
+                self.preferred_apps.append(app)
+        self.dontcare_apps = sorted([app for app in self.related_apps if app not in self.preferred_apps], key=lambda(app): str(app))
+        self.preferred_apps_scrolling_listbox.populate(self.preferred_apps)
+        self.dontcare_apps_scrolling_listbox.populate(self.dontcare_apps)
 
     def populate_global_preference_listbox(self):
-        self.global_preference_scrolling_listbox.populate([self.registry.app_by_id(app_id).qualified_name() for app_id in self.global_preference])
+        self.global_preference_scrolling_listbox.populate(self.global_preference)
 
     def select_from_apps(self, app, i):
         self.selected_app = app
         if app is not None:
-            print("select_from_apps %d: %s" % (i, self.selected_app.qualified_name()))
-            self.related_apps = self.registry.related_apps(self.selected_app)
+            print("select_from_apps %d: %s" % (i, str(self.selected_app)))
+            self.related_apps = self.catalogue.related_apps(self.selected_app)
         else:
             print("unselect_from_apps")
-            self.related_apps = {}
+            self.related_apps = []
         self.populate_preferred_dontcare_listboxes()
         self.populate_supported_mime_types_listbox()
 
@@ -461,14 +460,14 @@ class MyApp:
     def select_from_blacklisted_mime_types(self, mime_type, i):
         print("select_from_blacklisted_mime_types %d: %s" % (i, mime_type))
 
-    def select_from_global_preference(self, app_id, i):
-        print("select_from_global_preference %d: %s" % (i, app_id))
+    def select_from_global_preference(self, app, i):
+        print("select_from_global_preference %d: %s" % (i, app))
 
-    def select_from_preferred_apps(self, app_id, i):
-        print("select_from_preferred_apps %d: %s" % (i, app_id))
+    def select_from_preferred_apps(self, app, i):
+        print("select_from_preferred_apps %d: %s" % (i, app))
 
-    def select_from_dontcare_apps(self, app_id, i):
-        print("select_from_dontcare_apps %d: %s" % (i, app_id))
+    def select_from_dontcare_apps(self, app, i):
+        print("select_from_dontcare_apps %d: %s" % (i, app))
 
 def main():
     root = Tkinter.Tk()
