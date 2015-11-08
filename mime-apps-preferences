@@ -568,7 +568,7 @@ class MyApp:
         self.mime_types_smartlist.grid(row=nextrow, column=1)
         nextrow += 1
 
-        self.app_buttonbox = ButtonBox(self.frame, ["Prefer", "Don't Care"], self.app_button_pressed)
+        self.app_buttonbox = ButtonBox(self.frame, ["Prefer", "Remove"], self.app_button_pressed)
         self.app_buttonbox.grid(row=nextrow, column=0)
         self.mime_type_buttonbox = ButtonBox(self.frame, ["Blacklist", "Unblacklist"], self.mime_type_button_pressed)
         self.mime_type_buttonbox.grid(row=nextrow, column=1)
@@ -607,7 +607,7 @@ class MyApp:
             self.user_catalog.add_preference(app)
             self.preferred_smartlist.highlight(app)
         else:
-            # Don't Care
+            # Remove
             app = self.lens.selected_app()
             self.user_catalog.remove_preference(app)
         self.dirty = True
