@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=mime-apps-preferences
+Comment=Select preferred aplications for MIME types
+Categories=Utility;
+Exec=mime-apps-preferences
+Terminal=false

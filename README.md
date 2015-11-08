@@ -73,6 +73,10 @@ associations in the `mimeapps.list` file, and will simply discard them
 It would be wise to backup the `mimeapps.list` file before first use
 of this script, until a satisfactory result is achieved.
 
+## Licence
+
+GNU General Public License v3
+
 ## References
 + [freedesktop.org: Association between MIME types and applications](http://standards.freedesktop.org/mime-apps-spec/latest/index.html)
 + [freedesktop.org: XDG Base Directory Specification](http://standards.freedesktop.org/basedir-spec/latest/)
