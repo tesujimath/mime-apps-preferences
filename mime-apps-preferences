@@ -300,19 +300,14 @@ class UserCatalog(Observable):
             self._preferred_apps.remove(app)
         self.notify("preferred_apps")
 
-    def _shift_preference(self, app, offset):
-        if app in self._preferred_apps:
-            i = self._preferred_apps.index(app)
-            if i + offset >= 0 and i + offset < len(self._preferred_apps):
-                del self._preferred_apps[i]
-                self._preferred_apps.insert(i + offset, app)
-        self.notify("preferred_apps")
-
-    def raise_preference(self, app):
-        self._shift_preference(app, -1)
-
-    def lower_preference(self, app):
-        self._shift_preference(app, 1)
+    def shift_preference(self, app, other_app):
+        """Move prefered app just above or just below other_app."""
+        if app in self._preferred_apps and other_app in self._preferred_apps:
+            i_app = self._preferred_apps.index(app)
+            i_other_app = self._preferred_apps.index(other_app)
+            del self._preferred_apps[i_app]
+            self._preferred_apps.insert(i_other_app, app)
+            self.notify("preferred_apps")
 
     def _remake_sorted_blacklist(self):
         blacklist = []
@@ -458,6 +453,18 @@ class Lens(Observable):
 
     def filtered_blacklist(self):
         return self._filtered_blacklist
+
+    def _shift_preference(self, app, offset):
+        if app in self._filtered_preferred_apps:
+            i = self._filtered_preferred_apps.index(app)
+            if i + offset >= 0 and i + offset < len(self._filtered_preferred_apps):
+                self._user_catalog.shift_preference(app, self._filtered_preferred_apps[i + offset])
+
+    def raise_preference(self, app):
+        self._shift_preference(app, -1)
+
+    def lower_preference(self, app):
+        self._shift_preference(app, 1)
 
 class SmartList(Tkinter.Frame):
     def __init__(self, master, height, width, selectfn):
@@ -646,11 +653,11 @@ class MyApp:
         if b == 0:
             # +
             app = self.lens.selected_app()
-            self.user_catalog.raise_preference(app)
+            self.lens.raise_preference(app)
         else:
             # -
             app = self.lens.selected_app()
-            self.user_catalog.lower_preference(app)
+            self.lens.lower_preference(app)
         self.dirty = True
         self.enable_disable_buttons()
 
