@@ -1,5 +1,5 @@
 Name:           mime-apps-preferences
-Version:        0.5.1
+Version:        0.6
 Release:        1%{?dist}
 Summary:        Graphical selection of preferred applications for MIME types.
 
@@ -43,6 +43,9 @@ install -D %{name}.desktop  %{buildroot}%{_datadir}/applications/%{name}.desktop
 %{_datadir}/applications/*
 
 %changelog
+* Mon Nov  9 2015 Simon Guest <simon.guest@tesujimath.org> 0.6-1
+- support for added associations
+
 * Mon Nov  9 2015 Simon Guest <simon.guest@tesujimath.org> 0.5.1-1
 - fix for re-ordering preferred applications
 

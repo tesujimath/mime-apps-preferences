@@ -55,6 +55,10 @@ gets selected for that.  By blacklisting this pair, it will never be
 chosen in practice to handle text/plain, even if it appears at the top
 of the Preferred Applications list.
 
+`mime-apps-preferences` will act on and preserve any added
+associations in the `mimeapps.list` file, but provides no facilities
+for editing these.
+
 ## Internal Details
 
 `mime-apps-preferences` is a Python/Tkinter script.
@@ -65,10 +69,6 @@ It works by updating the `mimeapps.list` file, usually found in `~/.config/mimea
 
 `mime-apps-preferences` will replace any finely tuned settings in
 `mimeapps.list` with its simple, but rather comprehensive, view of the world.
-
-`mime-apps-preferences` currently has no support for adding file
-associations in the `mimeapps.list` file, and will simply discard them
-(for now).
 
 It would be wise to backup the `mimeapps.list` file before first use
 of this script, until a satisfactory result is achieved.
