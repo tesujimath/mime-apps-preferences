@@ -30,6 +30,52 @@ def strip_end(text, suffix):
 def app_id_from_desktop_basename(desktop_basename):
     return strip_end(desktop_basename, ".desktop")
 
+def get_xdg(selector):
+    """Return the value(s) of the selected XDG location, with fallback to defaults."""
+    xdg_dirs = {
+        "XDG_DATA_HOME": {
+            "default": os.path.expanduser("~/.local/share"),
+            "resultfn": lambda x: x
+        },
+        "XDG_CONFIG_HOME": {
+            "default": os.path.expanduser("~/.config"),
+            "resultfn": lambda x: x
+        },
+        "XDG_DATA_DIRS": {
+            "default": "/usr/local/share/:/usr/share/",
+            "resultfn": lambda x: x.split(":")
+        },
+        "XDG_CONFIG_DIRS": {
+            "default": "/etc/xdg",
+            "resultfn": lambda x: x.split(":")
+        },
+    }
+    s = os.getenv(selector)
+    if not s:
+        s = xdg_dirs[selector]["default"]
+    return xdg_dirs[selector]["resultfn"](s)
+
+def get_system_mimeapps_list_files():
+    result = []
+    def append_result_if_exists(dir, file):
+        candidate_path = os.path.join(dir, file)
+        if os.path.exists(candidate_path):
+            print("found %s " % candidate_path)
+            result.append(candidate_path)
+        else:
+            print("skipping %s" % candidate_path)
+    xdg_current_desktop = os.getenv("XDG_CURRENT_DESKTOP")
+    if xdg_current_desktop is not None:
+        desktops = xdg_current_desktop.split(":")
+    else:
+        desktops = []
+    for dir in get_xdg("XDG_CONFIG_DIRS") + \
+        [os.path.join(x, "applications") for x in get_xdg("XDG_DATA_DIRS")]:
+        for desktop in desktops:
+            append_result_if_exists(dir, desktop + "-mimeapps.list")
+        append_result_if_exists(dir, "mimeapps.list")
+    return result
+
 class Observable:
     def __init__(self):
         self._observers = {}     # list of callbacks, by selector (string)
@@ -134,13 +180,12 @@ class SystemCatalog:
         self._app_by_id = {}
         self._apps = set()
         self._read_desktop_files()
+        get_system_mimeapps_list_files()
 
     def _read_desktop_files(self):
-        datadirs = os.getenv("XDG_DATA_DIRS")
-        if not datadirs:
-            datadirs = "/usr/local/share/:/usr/share/"
+        datadirs = get_xdg("XDG_DATA_DIRS")
         applications_dirs = {}
-        for datadir in datadirs.split(":"):
+        for datadir in datadirs:
             applications_dir = os.path.join(datadir, "applications")
             if os.path.exists(applications_dir):
                 applications_dirs[applications_dir] = 1
@@ -205,9 +250,7 @@ class UserCatalog(Observable):
         self._blacklist = {} # (set of mime_type) by app
         self._sorted_blacklist = None
 
-        confighome = os.getenv("XDG_CONFIG_HOME")
-        if not confighome:
-            confighome = os.path.expanduser("~/.config")
+        confighome = get_xdg("XDG_CONFIG_HOME")
         self._mimeapps_list_path = os.path.join(confighome, "mimeapps.list")
         self._read_mimeapps_list()
 

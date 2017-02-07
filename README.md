@@ -73,6 +73,11 @@ It works by updating the `mimeapps.list` file, usually found in `~/.config/mimea
 It would be wise to backup the `mimeapps.list` file before first use
 of this script, until a satisfactory result is achieved.
 
+Any user overrides in the desktop-specific file `$desktop-mimeapps.list` are ignored.
+
+Any files in `$XDG_DATA_HOME` or its fallback location are ignored
+(because its use is deprecated by freedesktop.org).
+
 ## Licence
 
 GNU General Public License v3
