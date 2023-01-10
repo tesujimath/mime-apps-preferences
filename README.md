@@ -1,5 +1,7 @@
 # mime-apps-preferences
 
+*This application is unmaintained. Consider using [handlr](https://github.com/chmln/handlr) instead.*
+
 ## Introduction
 
 `mime-apps-preferences` is a graphical utility for defining the preferred
